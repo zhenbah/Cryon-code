@@ -5,6 +5,18 @@ use std::fs::{self};
 use std::io::Error as IoError;
 use std::path::Path;
 
+use super::SESSIONS_SUBDIR;
+use super::list::ConversationsPage;
+use super::list::Cursor;
+use super::list::get_conversations;
+use super::policy::is_persisted_response_item;
+use crate::config::Config;
+use crate::conversation_manager::InitialHistory;
+use crate::conversation_manager::RolloutFirstLine;
+use crate::git_info::GitInfo;
+use crate::git_info::collect_git_info;
+use codex_protocol::mcp_protocol::ConversationId;
+use codex_protocol::models::ResponseItem;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -18,17 +30,6 @@ use tokio::sync::oneshot;
 use tracing::info;
 use tracing::warn;
 use uuid::Uuid;
-
-use super::SESSIONS_SUBDIR;
-use super::list::ConversationsPage;
-use super::list::Cursor;
-use super::list::get_conversations;
-use super::policy::is_persisted_response_item;
-use crate::config::Config;
-use crate::conversation_manager::InitialHistory;
-use crate::git_info::GitInfo;
-use crate::git_info::collect_git_info;
-use codex_protocol::models::ResponseItem;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct SessionMeta {
@@ -94,14 +95,14 @@ impl RolloutRecorder {
     /// error so the caller can decide whether to disable persistence.
     pub async fn new(
         config: &Config,
-        uuid: Uuid,
+        conversation_id: ConversationId,
         instructions: Option<String>,
     ) -> std::io::Result<Self> {
         let LogFileInfo {
             file,
             session_id,
             timestamp,
-        } = create_log_file(config, uuid)?;
+        } = create_log_file(config, conversation_id.0)?;
 
         let timestamp_format: &[FormatItem] = format_description!(
             "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
@@ -162,15 +163,32 @@ impl RolloutRecorder {
             .map_err(|e| IoError::other(format!("failed to queue rollout state: {e}")))
     }
 
-    pub async fn get_rollout_history(path: &Path) -> std::io::Result<InitialHistory> {
+    pub async fn get_rollout_history(
+        path: &Path,
+    ) -> std::io::Result<(Option<ConversationId>, InitialHistory)> {
         info!("Resuming rollout from {path:?}");
+        tracing::error!("Resuming rollout from {path:?}");
         let text = tokio::fs::read_to_string(path).await?;
         let mut lines = text.lines();
-        let _ = lines
+        let first_line = lines
             .next()
             .ok_or_else(|| IoError::other("empty session file"))?;
-        let mut items = Vec::new();
+        let conversation_id = match serde_json::from_str::<RolloutFirstLine>(first_line) {
+            Ok(rollout_first_line) => {
+                tracing::error!(
+                    "Parsed conversation ID from rollout file: {:?}",
+                    rollout_first_line.id
+                );
+                Some(rollout_first_line.id)
+            }
+            Err(e) => {
+                return Err(IoError::other(format!(
+                    "failed to parse first line of rollout file as SessionMeta: {e}"
+                )));
+            }
+        };
 
+        let mut items = Vec::new();
         for line in lines {
             if line.trim().is_empty() {
                 continue;
@@ -198,11 +216,20 @@ impl RolloutRecorder {
             }
         }
 
-        info!("Resumed rollout successfully from {path:?}");
-        if items.is_empty() {
-            Ok(InitialHistory::New)
+        tracing::error!(
+            "Resumed rollout with {} items, conversation ID: {:?}",
+            items.len(),
+            conversation_id
+        );
+        if conversation_id.is_none() {
+            Err(IoError::other(
+                "failed to parse conversation ID from rollout file",
+            ))
+        } else if items.is_empty() || conversation_id.is_none() {
+            Ok((None, InitialHistory::New))
         } else {
-            Ok(InitialHistory::Resumed(items))
+            info!("Resumed rollout successfully from {path:?}");
+            Ok((conversation_id, InitialHistory::Resumed(items)))
         }
     }
 

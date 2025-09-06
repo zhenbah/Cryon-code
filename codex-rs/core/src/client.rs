@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::AuthManager;
 use bytes::Bytes;
-use codex_protocol::mcp_protocol::AuthMode;
+use codex_protocol::mcp_protocol::{AuthMode, ConversationId};
 use eventsource_stream::Eventsource;
 use futures::prelude::*;
 use regex_lite::Regex;
@@ -19,7 +19,6 @@ use tokio_util::io::ReaderStream;
 use tracing::debug;
 use tracing::trace;
 use tracing::warn;
-use uuid::Uuid;
 
 use crate::chat_completions::AggregateStreamExt;
 use crate::chat_completions::stream_chat_completions;
@@ -70,7 +69,7 @@ pub struct ModelClient {
     auth_manager: Option<Arc<AuthManager>>,
     client: reqwest::Client,
     provider: ModelProviderInfo,
-    session_id: Uuid,
+    session_id: ConversationId,
     effort: ReasoningEffortConfig,
     summary: ReasoningSummaryConfig,
 }
@@ -82,7 +81,7 @@ impl ModelClient {
         provider: ModelProviderInfo,
         effort: ReasoningEffortConfig,
         summary: ReasoningSummaryConfig,
-        session_id: Uuid,
+        session_id: ConversationId,
     ) -> Self {
         let client = create_client(&config.responses_originator_header);
 
@@ -231,7 +230,7 @@ impl ModelClient {
                 && auth.mode == AuthMode::ChatGPT
                 && let Some(account_id) = auth.get_account_id()
             {
-                req_builder = req_builder.header("chatgpt-account-id", account_id);
+                req_builder = req_builder.header("chatgpt-account-id", &account_id);
             }
 
             let res = req_builder.send().await;

@@ -49,7 +49,7 @@ use std::time::Duration;
 use std::time::Instant;
 use tracing::error;
 use unicode_width::UnicodeWidthStr;
-use uuid::Uuid;
+use codex_protocol::mcp_protocol::ConversationId;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CommandOutput {
@@ -821,7 +821,7 @@ pub(crate) fn new_completed_mcp_tool_call(
 pub(crate) fn new_status_output(
     config: &Config,
     usage: &TokenUsage,
-    session_id: &Option<Uuid>,
+    session_id: &Option<ConversationId>,
 ) -> PlainHistoryCell {
     let mut lines: Vec<Line<'static>> = Vec::new();
     lines.push("/status".magenta().into());

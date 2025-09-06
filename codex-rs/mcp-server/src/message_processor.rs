@@ -8,7 +8,7 @@ use crate::codex_tool_config::create_tool_for_codex_tool_call_param;
 use crate::codex_tool_config::create_tool_for_codex_tool_call_reply_param;
 use crate::error_code::INVALID_REQUEST_ERROR_CODE;
 use crate::outgoing_message::OutgoingMessageSender;
-use codex_protocol::mcp_protocol::ClientRequest;
+use codex_protocol::mcp_protocol::{ClientRequest, ConversationId};
 
 use codex_core::AuthManager;
 use codex_core::ConversationManager;
@@ -41,7 +41,7 @@ pub(crate) struct MessageProcessor {
     initialized: bool,
     codex_linux_sandbox_exe: Option<PathBuf>,
     conversation_manager: Arc<ConversationManager>,
-    running_requests_id_to_codex_uuid: Arc<Mutex<HashMap<RequestId, Uuid>>>,
+    running_requests_id_to_codex_uuid: Arc<Mutex<HashMap<RequestId, ConversationId>>>,
 }
 
 impl MessageProcessor {
@@ -474,7 +474,7 @@ impl MessageProcessor {
             }
         };
         let session_id = match Uuid::parse_str(&session_id) {
-            Ok(id) => id,
+            Ok(id) => ConversationId(id),
             Err(e) => {
                 tracing::error!("Failed to parse session_id: {e}");
                 let result = CallToolResult {

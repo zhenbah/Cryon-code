@@ -8,19 +8,21 @@ use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
+use codex_protocol::mcp_protocol::ConversationId;
+
 /// Aggregates all backtrack-related state used by the App.
 #[derive(Default)]
 pub(crate) struct BacktrackState {
     /// True when Esc has primed backtrack mode in the main view.
     pub(crate) primed: bool,
     /// Session id of the base conversation to fork from.
-    pub(crate) base_id: Option<uuid::Uuid>,
+    pub(crate) base_id: Option<ConversationId>,
     /// Current step count (Nth last user message).
     pub(crate) count: usize,
     /// True when the transcript overlay is showing a backtrack preview.
     pub(crate) overlay_preview_active: bool,
     /// Pending fork request: (base_id, drop_count, prefill).
-    pub(crate) pending: Option<(uuid::Uuid, usize, String)>,
+    pub(crate) pending: Option<(ConversationId, usize, String)>,
 }
 
 impl App {
@@ -91,7 +93,7 @@ impl App {
     pub(crate) fn request_backtrack(
         &mut self,
         prefill: String,
-        base_id: uuid::Uuid,
+        base_id: ConversationId,
         drop_last_messages: usize,
     ) {
         self.backtrack.pending = Some((base_id, drop_last_messages, prefill));

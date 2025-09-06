@@ -30,7 +30,6 @@ use tracing::error;
 use tracing::info;
 use tracing::trace;
 use tracing::warn;
-use uuid::Uuid;
 
 use crate::ModelProviderInfo;
 use crate::apply_patch;
@@ -89,6 +88,7 @@ use crate::protocol::ExecCommandBeginEvent;
 use crate::protocol::ExecCommandEndEvent;
 use crate::protocol::FileChange;
 use crate::protocol::InputItem;
+use crate::protocol::InputMessageKind;
 use crate::protocol::ListCustomPromptsResponseEvent;
 use crate::protocol::Op;
 use crate::protocol::PatchApplyBeginEvent;
@@ -114,6 +114,7 @@ use crate::util::backoff;
 use codex_protocol::config_types::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::custom_prompts::CustomPrompt;
+use codex_protocol::mcp_protocol::ConversationId;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::LocalShellAction;
@@ -149,7 +150,7 @@ pub struct Codex {
 /// unique session id.
 pub struct CodexSpawnOk {
     pub codex: Codex,
-    pub session_id: Uuid,
+    pub session_id: ConversationId,
 }
 
 pub(crate) const INITIAL_SUBMIT_ID: &str = "";
@@ -167,6 +168,7 @@ impl Codex {
     pub async fn spawn(
         config: Config,
         auth_manager: Arc<AuthManager>,
+        conversation_id: Option<ConversationId>,
         conversation_history: InitialHistory,
     ) -> CodexResult<CodexSpawnOk> {
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
@@ -195,6 +197,7 @@ impl Codex {
             config.clone(),
             auth_manager.clone(),
             tx_event.clone(),
+            conversation_id,
             conversation_history.clone(),
         )
         .await
@@ -269,7 +272,7 @@ struct State {
 ///
 /// A session has at most 1 running task at a time, and can be interrupted by user input.
 pub(crate) struct Session {
-    session_id: Uuid,
+    session_id: ConversationId,
     tx_event: Sender<Event>,
 
     /// Manager for external MCP servers/tools.
@@ -356,9 +359,10 @@ impl Session {
         config: Arc<Config>,
         auth_manager: Arc<AuthManager>,
         tx_event: Sender<Event>,
+        session_id: Option<ConversationId>,
         initial_history: InitialHistory,
     ) -> anyhow::Result<(Arc<Self>, TurnContext)> {
-        let session_id = Uuid::new_v4();
+        let session_id = session_id.unwrap_or_default();
         let ConfigureSession {
             provider,
             model,
@@ -560,6 +564,12 @@ impl Session {
             .iter()
             .flat_map(|item| {
                 map_response_item_to_event_messages(item, self.show_raw_agent_reasoning)
+            })
+            .filter(|event| {
+                if let EventMsg::UserMessage(user_message) = event {
+                    return matches!(user_message.kind, Some(InputMessageKind::Plain));
+                }
+                true
             })
             .collect()
     }

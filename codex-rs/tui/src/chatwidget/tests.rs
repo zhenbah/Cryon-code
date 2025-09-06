@@ -133,7 +133,7 @@ fn resumed_initial_messages_render_history() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual();
 
     let configured = codex_core::protocol::SessionConfiguredEvent {
-        session_id: Uuid::nil(),
+        session_id: ConversationId(Uuid::nil()),
         model: "test-model".to_string(),
         history_log_id: 0,
         history_entry_count: 0,

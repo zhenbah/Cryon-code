@@ -19,9 +19,15 @@ use strum_macros::Display;
 use ts_rs::TS;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default, Hash)]
 #[ts(type = "string")]
 pub struct ConversationId(pub Uuid);
+
+impl ConversationId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
 
 impl Display for ConversationId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -177,7 +183,7 @@ pub struct NewConversationResponse {
     pub model: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ResumeConversationResponse {
     pub conversation_id: ConversationId,
@@ -200,6 +206,7 @@ pub struct ListConversationsParams {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ConversationSummary {
+    pub conversation_id: ConversationId,
     pub path: PathBuf,
     pub preview: String,
     /// RFC3339 timestamp string for the session start, if available.

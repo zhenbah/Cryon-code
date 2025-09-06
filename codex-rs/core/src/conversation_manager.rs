@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-
+use serde::Deserialize;
 use crate::AuthManager;
 use crate::CodexAuth;
 use tokio::sync::RwLock;
-use uuid::Uuid;
-
+use codex_protocol::mcp_protocol::ConversationId;
 use crate::codex::Codex;
 use crate::codex::CodexSpawnOk;
 use crate::codex::INITIAL_SUBMIT_ID;
@@ -29,15 +28,22 @@ pub enum InitialHistory {
 /// Represents a newly created Codex conversation, including the first event
 /// (which is [`EventMsg::SessionConfigured`]).
 pub struct NewConversation {
-    pub conversation_id: Uuid,
+    pub conversation_id: ConversationId,
     pub conversation: Arc<CodexConversation>,
     pub session_configured: SessionConfiguredEvent,
 }
 
+// TODO can this be merged with the other one?
+#[derive(Debug, Deserialize)]
+pub struct RolloutFirstLine {
+    pub id: ConversationId,
+}
+
+
 /// [`ConversationManager`] is responsible for creating conversations and
 /// maintaining them in memory.
 pub struct ConversationManager {
-    conversations: Arc<RwLock<HashMap<Uuid, Arc<CodexConversation>>>>,
+    conversations: Arc<RwLock<HashMap<ConversationId, Arc<CodexConversation>>>>,
     auth_manager: Arc<AuthManager>,
 }
 
@@ -67,17 +73,17 @@ impl ConversationManager {
     ) -> CodexResult<NewConversation> {
         // TO BE REFACTORED: use the config experimental_resume field until we have a mainstream way.
         if let Some(resume_path) = config.experimental_resume.as_ref() {
-            let initial_history = RolloutRecorder::get_rollout_history(resume_path).await?;
+            let (conversation_id, initial_history) = RolloutRecorder::get_rollout_history(resume_path).await?;
             let CodexSpawnOk {
                 codex,
                 session_id: conversation_id,
-            } = Codex::spawn(config, auth_manager, initial_history).await?;
+            } = Codex::spawn(config, auth_manager, conversation_id, initial_history).await?;
             self.finalize_spawn(codex, conversation_id).await
         } else {
             let CodexSpawnOk {
                 codex,
                 session_id: conversation_id,
-            } = { Codex::spawn(config, auth_manager, InitialHistory::New).await? };
+            } = { Codex::spawn(config, auth_manager, None, InitialHistory::New).await? };
             self.finalize_spawn(codex, conversation_id).await
         }
     }
@@ -85,7 +91,7 @@ impl ConversationManager {
     async fn finalize_spawn(
         &self,
         codex: Codex,
-        conversation_id: Uuid,
+        conversation_id: ConversationId,
     ) -> CodexResult<NewConversation> {
         // The first event must be `SessionInitialized`. Validate and forward it
         // to the caller so that they can display it in the conversation
@@ -116,7 +122,7 @@ impl ConversationManager {
 
     pub async fn get_conversation(
         &self,
-        conversation_id: Uuid,
+        conversation_id: ConversationId,
     ) -> CodexResult<Arc<CodexConversation>> {
         let conversations = self.conversations.read().await;
         conversations
@@ -131,15 +137,15 @@ impl ConversationManager {
         rollout_path: PathBuf,
         auth_manager: Arc<AuthManager>,
     ) -> CodexResult<NewConversation> {
-        let initial_history = RolloutRecorder::get_rollout_history(&rollout_path).await?;
+        let (conversation_id, initial_history) = RolloutRecorder::get_rollout_history(&rollout_path).await?;
         let CodexSpawnOk {
             codex,
             session_id: conversation_id,
-        } = Codex::spawn(config, auth_manager, initial_history).await?;
+        } = Codex::spawn(config, auth_manager, conversation_id, initial_history).await?;
         self.finalize_spawn(codex, conversation_id).await
     }
 
-    pub async fn remove_conversation(&self, conversation_id: Uuid) {
+    pub async fn remove_conversation(&self, conversation_id: ConversationId) {
         self.conversations.write().await.remove(&conversation_id);
     }
 
@@ -162,7 +168,7 @@ impl ConversationManager {
         let CodexSpawnOk {
             codex,
             session_id: conversation_id,
-        } = Codex::spawn(config, auth_manager, history).await?;
+        } = Codex::spawn(config, auth_manager, None, history).await?;
 
         self.finalize_spawn(codex, conversation_id).await
     }

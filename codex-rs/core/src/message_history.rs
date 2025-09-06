@@ -25,7 +25,6 @@ use serde::Serialize;
 use std::time::Duration;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
-use uuid::Uuid;
 
 use crate::config::Config;
 use crate::config_types::HistoryPersistence;
@@ -34,6 +33,7 @@ use crate::config_types::HistoryPersistence;
 use std::os::unix::fs::OpenOptionsExt;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use codex_protocol::mcp_protocol::ConversationId;
 
 /// Filename that stores the message history inside `~/.codex`.
 const HISTORY_FILENAME: &str = "history.jsonl";
@@ -57,7 +57,7 @@ fn history_filepath(config: &Config) -> PathBuf {
 /// Append a `text` entry associated with `session_id` to the history file. Uses
 /// advisory file locking to ensure that concurrent writes do not interleave,
 /// which entails a small amount of blocking I/O internally.
-pub(crate) async fn append_entry(text: &str, session_id: &Uuid, config: &Config) -> Result<()> {
+pub(crate) async fn append_entry(text: &str, session_id: &ConversationId, config: &Config) -> Result<()> {
     match config.history.persistence {
         HistoryPersistence::SaveAll => {
             // Save everything: proceed.
