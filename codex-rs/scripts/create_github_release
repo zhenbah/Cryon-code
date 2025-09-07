@@ -213,14 +213,16 @@ def replace_version(contents: str, version: str) -> str:
 
     # Replace version only within the [package] section
     updated_section, matches = re.subn(
-        r'^version = "[^"]+"', f'version = "{version}"', package_section, count=1, flags=re.MULTILINE
+        r'^\s*version\s*=\s*"[^"]+"', f'version = "{version}"', package_section, count=1, flags=re.MULTILINE
     )
 
     if matches != 1:
         raise ReleaseError("No version line found in [package] section of Cargo.toml.")
 
-    # Replace the package section in the full contents
-    updated_contents = contents.replace(package_section, updated_section)
+    # Replace only the exact [package] section block
+    updated_section_block = '[package]' + updated_section
+    start, end = package_match.span()
+    updated_contents = contents[:start] + updated_section_block + contents[end:]
     return updated_contents
 
 
