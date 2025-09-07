@@ -84,7 +84,7 @@ def main(argv: list[str]) -> int:
         print(f"Using repository: {repo}")
         print(f"Using Cargo.toml: {cargo_toml_path}")
 
-        version = determine_version(args)
+        version = determine_version(args, repo)
         print(f"Publishing version {version}")
         if args.dry_run:
             return 0
@@ -299,79 +299,13 @@ def create_tag_ref(repo: str, version: str, tag_sha: str) -> None:
         method="POST",
         payload={"ref": f"refs/tags/rust-v{version}", "sha": tag_sha},
     )
-    try:
-        return response["sha"]
-    except KeyError as error:
-        raise ReleaseError("Blob creation response missing SHA.") from error
 
 
-def create_tree(base_tree_sha: str, blob_sha: str) -> str:
-    response = run_gh_api(
-        f"/repos/{REPO}/git/trees",
-        method="POST",
-        payload={
-            "base_tree": base_tree_sha,
-            "tree": [
-                {
-                    "path": CARGO_TOML_PATH,
-                    "mode": "100644",
-                    "type": "blob",
-                    "sha": blob_sha,
-                }
-            ],
-        },
-    )
-    try:
-        return response["sha"]
-    except KeyError as error:
-        raise ReleaseError("Tree creation response missing SHA.") from error
 
 
-def create_commit(version: str, tree_sha: str, parent_sha: str) -> str:
-    response = run_gh_api(
-        f"/repos/{REPO}/git/commits",
-        method="POST",
-        payload={
-            "message": f"Release {version}",
-            "tree": tree_sha,
-            "parents": [parent_sha],
-        },
-    )
-    try:
-        return response["sha"]
-    except KeyError as error:
-        raise ReleaseError("Commit creation response missing SHA.") from error
 
-
-def create_tag(version: str, commit_sha: str) -> str:
-    tag_name = f"rust-v{version}"
-    response = run_gh_api(
-        f"/repos/{REPO}/git/tags",
-        method="POST",
-        payload={
-            "tag": tag_name,
-            "message": f"Release {version}",
-            "object": commit_sha,
-            "type": "commit",
-        },
-    )
-    try:
-        return response["sha"]
-    except KeyError as error:
-        raise ReleaseError("Tag creation response missing SHA.") from error
-
-
-def create_tag_ref(version: str, tag_sha: str) -> None:
-    tag_ref = f"refs/tags/rust-v{version}"
-    run_gh_api(
-        f"/repos/{REPO}/git/refs",
-        method="POST",
-        payload={"ref": tag_ref, "sha": tag_sha},
-    )
-
-
-def determine_version(args: argparse.Namespace) -> str:
-    latest_version = get_latest_release_version()
+def determine_version(args: argparse.Namespace, repo: str) -> str:
+    latest_version = get_latest_release_version(repo)
     major, minor, patch = parse_semver(latest_version)
     next_minor_version = format_version(major, minor + 1, 0)
 
@@ -379,7 +313,7 @@ def determine_version(args: argparse.Namespace) -> str:
         return next_minor_version
 
     alpha_prefix = f"{next_minor_version}-alpha."
-    releases = list_releases()
+    releases = list_releases(repo)
     highest_alpha = 0
     found_alpha = False
     for release in releases:
@@ -399,8 +333,8 @@ def determine_version(args: argparse.Namespace) -> str:
     return f"{alpha_prefix}1"
 
 
-def get_latest_release_version() -> str:
-    response = run_gh_api(f"/repos/{REPO}/releases/latest")
+def get_latest_release_version(repo: str) -> str:
+    response = run_gh_api(f"/repos/{repo}/releases/latest")
     tag = response.get("tag_name")
     version = strip_tag_prefix(tag)
     if not version:
@@ -408,8 +342,8 @@ def get_latest_release_version() -> str:
     return version
 
 
-def list_releases() -> list[dict]:
-    response = run_gh_api(f"/repos/{REPO}/releases?per_page=100")
+def list_releases(repo: str) -> list[dict]:
+    response = run_gh_api(f"/repos/{repo}/releases?per_page=100")
     if not isinstance(response, list):
         raise ReleaseError("Unexpected response when listing releases.")
     return response

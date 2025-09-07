@@ -196,27 +196,45 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
       - name: Install dependencies
-        run: |
-          cd ..
-          pnpm install
+        working-directory: ./
+        run: pnpm install
       - name: Generate TypeScript bindings
+        working-directory: ./
         run: |
           # Generate bindings from mcp-types
-          cd mcp-types
+          cd codex-rs/mcp-types
           cargo run --bin generate_mcp_types
           # Generate bindings from protocol
           cd ../protocol
           cargo run --bin generate_ts
       - name: Check for binding differences
         run: |
-          if ! git diff --quiet --exit-code protocol/bindings/; then
+          # Check for tracked changes
+          tracked_changes=$(git diff --name-only protocol/bindings/ 2>/dev/null || true)
+          # Check for untracked files
+          untracked_files=$(git ls-files --others --exclude-standard protocol/bindings/ 2>/dev/null || true)
+
+          if [ -n "$tracked_changes" ] || [ -n "$untracked_files" ]; then
             echo "❌ TypeScript bindings are out of date. Run the following to update:"
             echo "  cd codex-rs/mcp-types && cargo run --bin generate_mcp_types"
             echo "  cd codex-rs/protocol && cargo run --bin generate_ts"
             echo ""
-            echo "Files that differ:"
-            git diff --name-only protocol/bindings/
+
+            if [ -n "$tracked_changes" ]; then
+              echo "Files that differ:"
+              echo "$tracked_changes"
+            fi
+
+            if [ -n "$untracked_files" ]; then
+              echo "Untracked files:"
+              echo "$untracked_files"
+            fi
+
             exit 1
           else
             echo "✅ TypeScript bindings are up-to-date"

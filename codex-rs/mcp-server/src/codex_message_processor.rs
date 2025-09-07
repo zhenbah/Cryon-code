@@ -533,7 +533,7 @@ impl CodexMessageProcessor {
         request_id: RequestId,
         params: ListConversationsParams,
     ) {
-        let page_size = params.page_size.unwrap_or(25);
+        let page_size = params.page_size.unwrap_or(25).clamp(1, 100);
         // Decode the optional cursor string to a Cursor via serde (Cursor implements Deserialize from string)
         let cursor_obj: Option<RolloutCursor> = match params.cursor {
             Some(s) => serde_json::from_str::<RolloutCursor>(&format!("\"{s}\"")).ok(),
