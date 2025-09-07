@@ -72,10 +72,6 @@ def resolve_config(args: argparse.Namespace) -> tuple[str, str]:
     # Resolve Cargo.toml path
     cargo_toml_path = args.cargo_toml or os.environ.get("CARGO_TOML_PATH") or "codex-rs/Cargo.toml"
 
-    # Validate Cargo.toml exists
-    if not os.path.isfile(cargo_toml_path):
-        raise ReleaseError(f"Cargo.toml not found at: {cargo_toml_path}")
-
     return repo, cargo_toml_path
 
 
