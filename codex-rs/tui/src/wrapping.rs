@@ -18,33 +18,47 @@ where
                 let start = unsafe { slice.as_ptr().offset_from(text.as_ptr()) as usize };
                 let end = start + slice.len();
                 let trailing_spaces = text[end..].chars().take_while(|c| *c == ' ').count();
-                lines.push(start..end + trailing_spaces + 1);
-                current_pos = end + trailing_spaces + 1;
+                let end_clamped = (end + trailing_spaces + 1).min(text.len());
+                lines.push(start..end_clamped);
+                current_pos = end_clamped;
             }
             std::borrow::Cow::Owned(owned) => {
                 // Search for the owned string in the remaining text to find its range
-                if let Some(rel_start) = text[current_pos..].find(owned) {
-                    let start = current_pos + rel_start;
-                    let end = start + owned.len();
-                    let trailing_spaces = text[end..].chars().take_while(|c| *c == ' ').count();
-                    lines.push(start..end + trailing_spaces + 1);
-                    current_pos = end + trailing_spaces + 1;
+                let search_result = if let Some(rel_start) = text[current_pos..].find(owned) {
+                    Some((rel_start, owned.len()))
                 } else {
                     // Fallback: if not found, try to find a trimmed version
                     let trimmed = owned.trim();
                     if let Some(rel_start) = text[current_pos..].find(trimmed) {
-                        let start = current_pos + rel_start;
-                        let end = start + trimmed.len();
-                        let trailing_spaces = text[end..].chars().take_while(|c| *c == ' ').count();
-                        lines.push(start..end + trailing_spaces + 1);
-                        current_pos = end + trailing_spaces + 1;
+                        Some((rel_start, trimmed.len()))
                     } else {
-                        // As last resort, panic with more info
-                        panic!(
-                            "wrap_ranges: could not find owned string '{}' in original text from position {}",
-                            owned, current_pos
-                        );
+                        // If owned ends with '-', try without the trailing hyphen
+                        if owned.ends_with('-') {
+                            let without_hyphen = &owned[..owned.len() - 1];
+                            if let Some(rel_start) = text[current_pos..].find(without_hyphen) {
+                                Some((rel_start, without_hyphen.len()))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
                     }
+                };
+
+                if let Some((rel_start, found_len)) = search_result {
+                    let start = current_pos + rel_start;
+                    let end = start + found_len;
+                    let trailing_spaces = text[end..].chars().take_while(|c| *c == ' ').count();
+                    let end_clamped = (end + trailing_spaces + 1).min(text.len());
+                    lines.push(start..end_clamped);
+                    current_pos = end_clamped;
+                } else {
+                    // As last resort, panic with more info
+                    panic!(
+                        "wrap_ranges: could not find owned string '{}' in original text from position {}",
+                        owned, current_pos
+                    );
                 }
             }
         }

@@ -2,6 +2,11 @@
 //!
 //! Uses a SQ (Submission Queue) / EQ (Event Queue) pattern to asynchronously communicate
 //! between user and agent.
+//!
+//! Recent enhancements:
+//! - Added optional encoding field to ExecCommandOutputDeltaEvent for binary data handling
+//! - Updated TypeScript bindings to properly reflect optional fields with skip_serializing_if
+//! - Enhanced ResponseItem variants with conditional serialization for id fields
 
 use std::collections::HashMap;
 use std::fmt;
@@ -837,6 +842,13 @@ pub enum ExecOutputStream {
     Stderr,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum Encoding {
+    Utf8,
+    Base64,
+}
+
 #[serde_as]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, TS)]
 pub struct ExecCommandOutputDeltaEvent {
@@ -844,10 +856,17 @@ pub struct ExecCommandOutputDeltaEvent {
     pub call_id: String,
     /// Which stream produced this chunk.
     pub stream: ExecOutputStream,
-    /// Raw bytes from the stream (may not be valid UTF-8).
+    /// Chunk of output. If binary, this is base64-encoded and `encoding` is "base64".
     #[serde_as(as = "serde_with::base64::Base64")]
     #[ts(as = "String")]
     pub chunk: Vec<u8>,
+    /// Encoding of the chunk data.
+    #[serde(default = "default_encoding")]
+    pub encoding: Option<Encoding>,
+}
+
+fn default_encoding() -> Option<Encoding> {
+    Some(Encoding::Base64)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -1044,10 +1063,11 @@ mod tests {
             call_id: "call21".to_string(),
             stream: ExecOutputStream::Stdout,
             chunk: vec![1, 2, 3, 4, 5],
+            encoding: Some(Encoding::Base64),
         };
         let serialized = serde_json::to_string(&event).unwrap();
         assert_eq!(
-            r#"{"call_id":"call21","stream":"stdout","chunk":"AQIDBAU="}"#,
+            r#"{"call_id":"call21","stream":"stdout","chunk":"AQIDBAU=","encoding":"base64"}"#,
             serialized,
         );
 

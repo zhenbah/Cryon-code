@@ -629,7 +629,9 @@ impl CodexMessageProcessor {
                         session_configured.clone(),
                     ),
                 };
-                let meta = OutgoingNotificationMeta::new(Some(RequestId::String(conversation_id.to_string())));
+                let meta = OutgoingNotificationMeta::new(Some(RequestId::String(
+                    conversation_id.to_string(),
+                )));
                 self.outgoing
                     .send_event_as_notification(&event, Some(meta))
                     .await;

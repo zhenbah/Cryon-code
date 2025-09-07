@@ -3,14 +3,13 @@
 import argparse
 import base64
 import json
+import os
 import re
 import subprocess
 import sys
 
 
-REPO = "openai/codex"
 BRANCH_REF = "heads/main"
-CARGO_TOML_PATH = "codex-rs/Cargo.toml"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -20,6 +19,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="Print the version that would be used and exit before making changes.",
+    )
+    parser.add_argument(
+        "--repo",
+        help="GitHub repository in format 'owner/repo' (default: auto-detect from git remote)",
+    )
+    parser.add_argument(
+        "--cargo-toml",
+        help="Path to Cargo.toml file (default: codex-rs/Cargo.toml)",
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
@@ -36,38 +43,76 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv[1:])
 
 
+def resolve_config(args: argparse.Namespace) -> tuple[str, str]:
+    """Resolve repository and Cargo.toml path from CLI args, env vars, or defaults."""
+    # Resolve repository
+    repo = args.repo or os.environ.get("REPO")
+    if not repo:
+        # Auto-detect from git remote
+        try:
+            result = subprocess.run(
+                ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                repo = result.stdout.strip()
+            else:
+                raise ReleaseError("Failed to auto-detect repository from git remote")
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            raise ReleaseError("GitHub CLI not found. Please install gh or specify --repo")
+
+    # Validate repo format
+    if not repo or "/" not in repo:
+        raise ReleaseError(f"Invalid repository format: {repo}. Expected 'owner/repo'")
+
+    # Resolve Cargo.toml path
+    cargo_toml_path = args.cargo_toml or os.environ.get("CARGO_TOML_PATH") or "codex-rs/Cargo.toml"
+
+    # Validate Cargo.toml exists
+    if not os.path.isfile(cargo_toml_path):
+        raise ReleaseError(f"Cargo.toml not found at: {cargo_toml_path}")
+
+    return repo, cargo_toml_path
+
+
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     try:
+        repo, cargo_toml_path = resolve_config(args)
+        print(f"Using repository: {repo}")
+        print(f"Using Cargo.toml: {cargo_toml_path}")
+
         version = determine_version(args)
         print(f"Publishing version {version}")
         if args.dry_run:
             return 0
 
         print("Fetching branch head...")
-        base_commit = get_branch_head()
+        base_commit = get_branch_head(repo)
         print(f"Base commit: {base_commit}")
         print("Fetching commit tree...")
-        base_tree = get_commit_tree(base_commit)
+        base_tree = get_commit_tree(repo, base_commit)
         print(f"Base tree: {base_tree}")
         print("Fetching Cargo.toml...")
-        current_contents = fetch_file_contents(base_commit)
+        current_contents = fetch_file_contents(repo, cargo_toml_path, base_commit)
         print("Updating version...")
         updated_contents = replace_version(current_contents, version)
         print("Creating blob...")
-        blob_sha = create_blob(updated_contents)
+        blob_sha = create_blob(repo, updated_contents)
         print(f"Blob SHA: {blob_sha}")
         print("Creating tree...")
-        tree_sha = create_tree(base_tree, blob_sha)
+        tree_sha = create_tree(repo, cargo_toml_path, base_tree, blob_sha)
         print(f"Tree SHA: {tree_sha}")
         print("Creating commit...")
-        commit_sha = create_commit(version, tree_sha, base_commit)
+        commit_sha = create_commit(repo, version, tree_sha, base_commit)
         print(f"Commit SHA: {commit_sha}")
         print("Creating tag...")
-        tag_sha = create_tag(version, commit_sha)
+        tag_sha = create_tag(repo, version, commit_sha)
         print(f"Tag SHA: {tag_sha}")
         print("Creating tag ref...")
-        create_tag_ref(version, tag_sha)
+        create_tag_ref(repo, version, tag_sha)
         print("Done.")
     except ReleaseError as error:
         print(f"ERROR: {error}", file=sys.stderr)
@@ -95,9 +140,29 @@ def run_gh_api(endpoint: str, *, method: str = "GET", payload: dict | None = Non
         json_payload = json.dumps(payload)
         print(f"Payload: {json_payload}")
         command.extend(["-H", "Content-Type: application/json", "--input", "-"])
-    result = subprocess.run(command, text=True, capture_output=True, input=json_payload)
+    try:
+        result = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            input=json_payload,
+            timeout=30
+        )
+    except FileNotFoundError:
+        raise ReleaseError(
+            "GitHub CLI (gh) not found. Please install GitHub CLI and authenticate with 'gh auth login'"
+        )
+    except subprocess.TimeoutExpired as error:
+        stderr_msg = error.stderr.strip() if error.stderr else ""
+        stdout_msg = error.stdout.strip() if error.stdout else ""
+        partial_output = f" (stderr: {stderr_msg}, stdout: {stdout_msg})" if stderr_msg or stdout_msg else ""
+        raise ReleaseError(f"GitHub CLI call timed out after 30 seconds{partial_output}") from error
+
     if result.returncode != 0:
-        message = result.stderr.strip() or result.stdout.strip() or "gh api call failed"
+        stderr_msg = result.stderr.strip() if result.stderr else ""
+        stdout_msg = result.stdout.strip() if result.stdout else ""
+        error_details = f" (stderr: {stderr_msg}, stdout: {stdout_msg})" if stderr_msg or stdout_msg else ""
+        message = f"gh api call failed with exit code {result.returncode}{error_details}"
         raise ReleaseError(message)
     try:
         return json.loads(result.stdout or "{}")
@@ -105,24 +170,24 @@ def run_gh_api(endpoint: str, *, method: str = "GET", payload: dict | None = Non
         raise ReleaseError("Failed to parse response from gh api.") from error
 
 
-def get_branch_head() -> str:
-    response = run_gh_api(f"/repos/{REPO}/git/refs/{BRANCH_REF}")
+def get_branch_head(repo: str) -> str:
+    response = run_gh_api(f"/repos/{repo}/git/refs/{BRANCH_REF}")
     try:
         return response["object"]["sha"]
     except KeyError as error:
         raise ReleaseError("Unable to determine branch head.") from error
 
 
-def get_commit_tree(commit_sha: str) -> str:
-    response = run_gh_api(f"/repos/{REPO}/git/commits/{commit_sha}")
+def get_commit_tree(repo: str, commit_sha: str) -> str:
+    response = run_gh_api(f"/repos/{repo}/git/commits/{commit_sha}")
     try:
         return response["tree"]["sha"]
     except KeyError as error:
         raise ReleaseError("Commit response missing tree SHA.") from error
 
 
-def fetch_file_contents(ref_sha: str) -> str:
-    response = run_gh_api(f"/repos/{REPO}/contents/{CARGO_TOML_PATH}?ref={ref_sha}")
+def fetch_file_contents(repo: str, cargo_toml_path: str, ref_sha: str) -> str:
+    response = run_gh_api(f"/repos/{repo}/contents/{cargo_toml_path}?ref={ref_sha}")
     try:
         encoded_content = response["content"].replace("\n", "")
         encoding = response.get("encoding", "")
@@ -139,19 +204,100 @@ def fetch_file_contents(ref_sha: str) -> str:
 
 
 def replace_version(contents: str, version: str) -> str:
-    updated, matches = re.subn(
-        r'^version = "[^"]+"', f'version = "{version}"', contents, count=1, flags=re.MULTILINE
+    # Find the [package] section
+    package_section_pattern = r'^\[package\](.*?)(?=\n\n|\n\[|\Z)'
+    package_match = re.search(package_section_pattern, contents, re.MULTILINE | re.DOTALL)
+
+    if not package_match:
+        raise ReleaseError("No [package] section found in Cargo.toml.")
+
+    package_section = package_match.group(1)
+
+    # Replace version only within the [package] section
+    updated_section, matches = re.subn(
+        r'^version = "[^"]+"', f'version = "{version}"', package_section, count=1, flags=re.MULTILINE
     )
+
     if matches != 1:
-        raise ReleaseError("Unable to update version in Cargo.toml.")
-    return updated
+        raise ReleaseError("No version line found in [package] section of Cargo.toml.")
+
+    # Replace the package section in the full contents
+    updated_contents = contents.replace(package_section, updated_section)
+    return updated_contents
 
 
-def create_blob(content: str) -> str:
+def create_blob(repo: str, content: str) -> str:
     response = run_gh_api(
-        f"/repos/{REPO}/git/blobs",
+        f"/repos/{repo}/git/blobs",
         method="POST",
         payload={"content": content, "encoding": "utf-8"},
+    )
+    try:
+        return response["sha"]
+    except KeyError as error:
+        raise ReleaseError("Blob creation response missing SHA.") from error
+
+
+def create_tree(repo: str, cargo_toml_path: str, base_tree_sha: str, blob_sha: str) -> str:
+    response = run_gh_api(
+        f"/repos/{repo}/git/trees",
+        method="POST",
+        payload={
+            "base_tree": base_tree_sha,
+            "tree": [
+                {
+                    "path": cargo_toml_path,
+                    "mode": "100644",
+                    "type": "blob",
+                    "sha": blob_sha,
+                }
+            ],
+        },
+    )
+    try:
+        return response["sha"]
+    except KeyError as error:
+        raise ReleaseError("Tree creation response missing SHA.") from error
+
+
+def create_commit(repo: str, version: str, tree_sha: str, parent_sha: str) -> str:
+    response = run_gh_api(
+        f"/repos/{repo}/git/commits",
+        method="POST",
+        payload={
+            "message": f"Release {version}",
+            "tree": tree_sha,
+            "parents": [parent_sha],
+        },
+    )
+    try:
+        return response["sha"]
+    except KeyError as error:
+        raise ReleaseError("Commit creation response missing SHA.") from error
+
+
+def create_tag(repo: str, version: str, commit_sha: str) -> str:
+    response = run_gh_api(
+        f"/repos/{repo}/git/tags",
+        method="POST",
+        payload={
+            "tag": f"rust-v{version}",
+            "message": f"Release {version}",
+            "object": commit_sha,
+            "type": "commit",
+        },
+    )
+    try:
+        return response["sha"]
+    except KeyError as error:
+        raise ReleaseError("Tag creation response missing SHA.") from error
+
+
+def create_tag_ref(repo: str, version: str, tag_sha: str) -> None:
+    run_gh_api(
+        f"/repos/{repo}/git/refs",
+        method="POST",
+        payload={"ref": f"refs/tags/rust-v{version}", "sha": tag_sha},
     )
     try:
         return response["sha"]

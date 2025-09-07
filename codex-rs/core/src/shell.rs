@@ -113,8 +113,8 @@ fn format_shell_invocation_with_rc(
     let joined = strip_bash_lc(command)
         .or_else(|| shlex::try_join(command.iter().map(|s| s.as_str())).ok())?;
 
-    let quoted_rc = shlex::try_quote(rc_path).ok()?;
-    let rc_command = format!("if [ -f {quoted_rc} ]; then source {quoted_rc}; fi && ({joined})");
+    let rcq = shlex::try_quote(rc_path).ok()?;
+    let rc_command = format!("if [ -f {rcq} ]; then . {rcq}; fi; ({joined})");
 
     Some(vec![shell_path.to_string(), "-lc".to_string(), rc_command])
 }
@@ -261,7 +261,8 @@ mod tests {
             Some(vec![
                 "/bin/zsh".to_string(),
                 "-lc".to_string(),
-                "myecho".to_string()
+                "if [ -f /does/not/exist/.zshrc ]; then . /does/not/exist/.zshrc; fi; (myecho)"
+                    .to_string()
             ])
         );
     }
@@ -278,7 +279,8 @@ mod tests {
             Some(vec![
                 "/bin/bash".to_string(),
                 "-lc".to_string(),
-                "myecho".to_string()
+                "if [ -f /does/not/exist/.bashrc ]; then . /does/not/exist/.bashrc; fi; (myecho)"
+                    .to_string()
             ])
         );
     }
@@ -290,7 +292,11 @@ mod tests {
         let cases = vec![
             (
                 vec!["myecho"],
-                vec![shell_path, "-lc", "source BASHRC_PATH && (myecho)"],
+                vec![
+                    shell_path,
+                    "-lc",
+                    "if [ -f BASHRC_PATH ]; then . BASHRC_PATH; fi; (myecho)",
+                ],
                 Some("It works!\n"),
             ),
             (
@@ -298,7 +304,7 @@ mod tests {
                 vec![
                     shell_path,
                     "-lc",
-                    "source BASHRC_PATH && (echo 'single' \"double\")",
+                    "if [ -f BASHRC_PATH ]; then . BASHRC_PATH; fi; (echo 'single' \"double\")",
                 ],
                 Some("single double\n"),
             ),
@@ -384,12 +390,20 @@ mod macos_tests {
         let cases = vec![
             (
                 vec!["myecho"],
-                vec![shell_path, "-lc", "source ZSHRC_PATH && (myecho)"],
+                vec![
+                    shell_path,
+                    "-lc",
+                    "if [ -f ZSHRC_PATH ]; then . ZSHRC_PATH; fi; (myecho)",
+                ],
                 Some("It works!\n"),
             ),
             (
                 vec!["myecho"],
-                vec![shell_path, "-lc", "source ZSHRC_PATH && (myecho)"],
+                vec![
+                    shell_path,
+                    "-lc",
+                    "if [ -f ZSHRC_PATH ]; then . ZSHRC_PATH; fi; (myecho)",
+                ],
                 Some("It works!\n"),
             ),
             (
@@ -397,7 +411,7 @@ mod macos_tests {
                 vec![
                     shell_path,
                     "-lc",
-                    "source ZSHRC_PATH && (bash -c \"echo 'single' \\\"double\\\"\")",
+                    "if [ -f ZSHRC_PATH ]; then . ZSHRC_PATH; fi; (bash -c \"echo 'single' \\\"double\\\"\")",
                 ],
                 Some("single double\n"),
             ),
@@ -406,7 +420,7 @@ mod macos_tests {
                 vec![
                     shell_path,
                     "-lc",
-                    "source ZSHRC_PATH && (echo 'single' \"double\")",
+                    "if [ -f ZSHRC_PATH ]; then . ZSHRC_PATH; fi; (echo 'single' \"double\")",
                 ],
                 Some("single double\n"),
             ),
