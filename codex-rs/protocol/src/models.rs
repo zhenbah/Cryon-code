@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde::ser::Serializer;
+use ts_rs::TS;
 
 use crate::protocol::InputItem;
 
@@ -30,7 +31,7 @@ pub enum ResponseInputItem {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentItem {
     InputText { text: String },
@@ -38,11 +39,11 @@ pub enum ContentItem {
     OutputText { text: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponseItem {
     Message {
-        #[serde(skip_serializing)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         id: Option<String>,
         role: String,
         content: Vec<ContentItem>,
@@ -57,7 +58,7 @@ pub enum ResponseItem {
     },
     LocalShellCall {
         /// Set when using the chat completions API.
-        #[serde(skip_serializing)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         id: Option<String>,
         /// Set when using the Responses API.
         call_id: Option<String>,
@@ -65,7 +66,7 @@ pub enum ResponseItem {
         action: LocalShellAction,
     },
     FunctionCall {
-        #[serde(skip_serializing)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         id: Option<String>,
         name: String,
         // The Responses API returns the function call arguments as a *string* that contains
@@ -86,7 +87,7 @@ pub enum ResponseItem {
         output: FunctionCallOutputPayload,
     },
     CustomToolCall {
-        #[serde(skip_serializing)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         status: Option<String>,
@@ -108,7 +109,7 @@ pub enum ResponseItem {
     //   "action": {"type":"search","query":"weather: San Francisco, CA"}
     // }
     WebSearchCall {
-        #[serde(skip_serializing)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         status: Option<String>,
@@ -116,6 +117,7 @@ pub enum ResponseItem {
     },
 
     #[serde(other)]
+    #[ts(skip)]
     Other,
 }
 
@@ -159,7 +161,7 @@ impl From<ResponseInputItem> for ResponseItem {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum LocalShellStatus {
     Completed,
@@ -167,13 +169,13 @@ pub enum LocalShellStatus {
     Incomplete,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LocalShellAction {
     Exec(LocalShellExecAction),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 pub struct LocalShellExecAction {
     pub command: Vec<String>,
     pub timeout_ms: Option<u64>,
@@ -182,23 +184,24 @@ pub struct LocalShellExecAction {
     pub user: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WebSearchAction {
     Search {
         query: String,
     },
     #[serde(other)]
+    #[ts(skip)]
     Other,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ReasoningItemReasoningSummary {
     SummaryText { text: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ReasoningItemContent {
     ReasoningText { text: String },
@@ -256,7 +259,7 @@ pub struct ShellToolCallParams {
     pub justification: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, TS)]
 pub struct FunctionCallOutputPayload {
     pub content: String,
     pub success: Option<bool>,

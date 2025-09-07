@@ -32,15 +32,19 @@ pub enum Shell {
 impl Shell {
     pub fn format_default_shell_invocation(&self, command: Vec<String>) -> Option<Vec<String>> {
         match self {
-            Shell::Zsh(zsh) => {
-                format_shell_invocation_with_rc(&command, &zsh.shell_path, &zsh.zshrc_path)
-            }
-            Shell::Bash(bash) => {
-                format_shell_invocation_with_rc(&command, &bash.shell_path, &bash.bashrc_path)
-            }
+            Shell::Zsh(zsh) => format_shell_invocation_with_rc(
+                command.as_slice(),
+                &zsh.shell_path,
+                &zsh.zshrc_path,
+            ),
+            Shell::Bash(bash) => format_shell_invocation_with_rc(
+                command.as_slice(),
+                &bash.shell_path,
+                &bash.bashrc_path,
+            ),
             Shell::PowerShell(ps) => {
                 // If model generated a bash command, prefer a detected bash fallback
-                if let Some(script) = strip_bash_lc(&command) {
+                if let Some(script) = strip_bash_lc(command.as_slice()) {
                     return match &ps.bash_exe_fallback {
                         Some(bash) => Some(vec![
                             bash.to_string_lossy().to_string(),
@@ -102,24 +106,21 @@ impl Shell {
 }
 
 fn format_shell_invocation_with_rc(
-    command: &Vec<String>,
+    command: &[String],
     shell_path: &str,
     rc_path: &str,
 ) -> Option<Vec<String>> {
     let joined = strip_bash_lc(command)
         .or_else(|| shlex::try_join(command.iter().map(|s| s.as_str())).ok())?;
 
-    let rc_command = if std::path::Path::new(rc_path).exists() {
-        format!("source {rc_path} && ({joined})")
-    } else {
-        joined
-    };
+    let rcq = shlex::try_quote(rc_path).ok()?;
+    let rc_command = format!("if [ -f {rcq} ]; then . {rcq}; fi; ({joined})");
 
     Some(vec![shell_path.to_string(), "-lc".to_string(), rc_command])
 }
 
-fn strip_bash_lc(command: &Vec<String>) -> Option<String> {
-    match command.as_slice() {
+fn strip_bash_lc(command: &[String]) -> Option<String> {
+    match command {
         // exactly three items
         [first, second, third]
             // first two must be "bash", "-lc"
@@ -133,6 +134,7 @@ fn strip_bash_lc(command: &Vec<String>) -> Option<String> {
 
 #[cfg(unix)]
 fn detect_default_user_shell() -> Shell {
+    // TODO: Replace getpwuid with reentrant alternative (getpwuid_r or nix::unistd::User::from_uid)
     use libc::getpwuid;
     use libc::getuid;
     use std::ffi::CStr;
@@ -142,6 +144,11 @@ fn detect_default_user_shell() -> Shell {
         let pw = getpwuid(uid);
 
         if !pw.is_null() {
+            // Check that pw_shell and pw_dir are non-null
+            if (*pw).pw_shell.is_null() || (*pw).pw_dir.is_null() {
+                return Shell::Unknown;
+            }
+
             let shell_path = CStr::from_ptr((*pw).pw_shell)
                 .to_string_lossy()
                 .into_owned();
@@ -254,7 +261,8 @@ mod tests {
             Some(vec![
                 "/bin/zsh".to_string(),
                 "-lc".to_string(),
-                "myecho".to_string()
+                "if [ -f /does/not/exist/.zshrc ]; then . /does/not/exist/.zshrc; fi; (myecho)"
+                    .to_string()
             ])
         );
     }
@@ -271,7 +279,8 @@ mod tests {
             Some(vec![
                 "/bin/bash".to_string(),
                 "-lc".to_string(),
-                "myecho".to_string()
+                "if [ -f /does/not/exist/.bashrc ]; then . /does/not/exist/.bashrc; fi; (myecho)"
+                    .to_string()
             ])
         );
     }
@@ -283,7 +292,11 @@ mod tests {
         let cases = vec![
             (
                 vec!["myecho"],
-                vec![shell_path, "-lc", "source BASHRC_PATH && (myecho)"],
+                vec![
+                    shell_path,
+                    "-lc",
+                    "if [ -f BASHRC_PATH ]; then . BASHRC_PATH; fi; (myecho)",
+                ],
                 Some("It works!\n"),
             ),
             (
@@ -291,7 +304,7 @@ mod tests {
                 vec![
                     shell_path,
                     "-lc",
-                    "source BASHRC_PATH && (echo 'single' \"double\")",
+                    "if [ -f BASHRC_PATH ]; then . BASHRC_PATH; fi; (echo 'single' \"double\")",
                 ],
                 Some("single double\n"),
             ),
@@ -377,12 +390,20 @@ mod macos_tests {
         let cases = vec![
             (
                 vec!["myecho"],
-                vec![shell_path, "-lc", "source ZSHRC_PATH && (myecho)"],
+                vec![
+                    shell_path,
+                    "-lc",
+                    "if [ -f ZSHRC_PATH ]; then . ZSHRC_PATH; fi; (myecho)",
+                ],
                 Some("It works!\n"),
             ),
             (
                 vec!["myecho"],
-                vec![shell_path, "-lc", "source ZSHRC_PATH && (myecho)"],
+                vec![
+                    shell_path,
+                    "-lc",
+                    "if [ -f ZSHRC_PATH ]; then . ZSHRC_PATH; fi; (myecho)",
+                ],
                 Some("It works!\n"),
             ),
             (
@@ -390,7 +411,7 @@ mod macos_tests {
                 vec![
                     shell_path,
                     "-lc",
-                    "source ZSHRC_PATH && (bash -c \"echo 'single' \\\"double\\\"\")",
+                    "if [ -f ZSHRC_PATH ]; then . ZSHRC_PATH; fi; (bash -c \"echo 'single' \\\"double\\\"\")",
                 ],
                 Some("single double\n"),
             ),
@@ -399,7 +420,7 @@ mod macos_tests {
                 vec![
                     shell_path,
                     "-lc",
-                    "source ZSHRC_PATH && (echo 'single' \"double\")",
+                    "if [ -f ZSHRC_PATH ]; then . ZSHRC_PATH; fi; (echo 'single' \"double\")",
                 ],
                 Some("single double\n"),
             ),

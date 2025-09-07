@@ -179,10 +179,71 @@ jobs:
           echo "One or more checks failed (clippy, cargo_check_all_crates, or test). See logs for details."
           exit 1
 
+  # --- Validate TypeScript bindings are up-to-date ---------------------------
+  ts-bindings:
+    name: TypeScript bindings validation
+    runs-on: ubuntu-24.04
+    needs: changed
+    if: ${{ needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push' }}
+    defaults:
+      run:
+        working-directory: codex-rs
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.89
+        with:
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+      - name: Install dependencies
+        working-directory: ./
+        run: pnpm install
+      - name: Generate TypeScript bindings
+        working-directory: ./
+        run: |
+          # Generate bindings from mcp-types
+          cd codex-rs/mcp-types
+          cargo run --bin generate_mcp_types
+          # Generate bindings from protocol
+          cd ../protocol
+          cargo run --bin generate_ts
+      - name: Check for binding differences
+        run: |
+          # Check for tracked changes
+          tracked_changes=$(git diff --name-only protocol/bindings/ 2>/dev/null || true)
+          # Check for untracked files
+          untracked_files=$(git ls-files --others --exclude-standard protocol/bindings/ 2>/dev/null || true)
+
+          if [ -n "$tracked_changes" ] || [ -n "$untracked_files" ]; then
+            echo "❌ TypeScript bindings are out of date. Run the following to update:"
+            echo "  cd codex-rs/mcp-types && cargo run --bin generate_mcp_types"
+            echo "  cd codex-rs/protocol && cargo run --bin generate_ts"
+            echo ""
+
+            if [ -n "$tracked_changes" ]; then
+              echo "Files that differ:"
+              echo "$tracked_changes"
+            fi
+
+            if [ -n "$untracked_files" ]; then
+              echo "Untracked files:"
+              echo "$untracked_files"
+            fi
+
+            exit 1
+          else
+            echo "✅ TypeScript bindings are up-to-date"
+          fi
+
   # --- Gatherer job that you mark as the ONLY required status -----------------
   results:
     name: CI results (required)
-    needs: [changed, general, lint_build_test]
+    needs: [changed, general, lint_build_test, ts-bindings]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -191,6 +252,7 @@ jobs:
         run: |
           echo "general: ${{ needs.general.result }}"
           echo "matrix : ${{ needs.lint_build_test.result }}"
+          echo "ts-bindings: ${{ needs.ts-bindings.result }}"
 
           # If nothing relevant changed (PR touching only root README, etc.),
           # declare success regardless of other jobs.
@@ -202,3 +264,4 @@ jobs:
           # Otherwise require the jobs to have succeeded
           [[ '${{ needs.general.result }}' == 'success' ]] || { echo 'general failed'; exit 1; }
           [[ '${{ needs.lint_build_test.result }}' == 'success' ]] || { echo 'matrix failed'; exit 1; }
+          [[ '${{ needs.ts-bindings.result }}' == 'success' ]] || { echo 'ts-bindings failed'; exit 1; }

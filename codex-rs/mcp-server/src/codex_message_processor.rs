@@ -8,6 +8,7 @@ use crate::error_code::INVALID_REQUEST_ERROR_CODE;
 use crate::json_to_toml::json_to_toml;
 use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::OutgoingNotification;
+use crate::outgoing_message::OutgoingNotificationMeta;
 use codex_core::AuthManager;
 use codex_core::CodexConversation;
 use codex_core::ConversationManager;
@@ -532,10 +533,10 @@ impl CodexMessageProcessor {
         request_id: RequestId,
         params: ListConversationsParams,
     ) {
-        let page_size = params.page_size.unwrap_or(25);
+        let page_size = params.page_size.unwrap_or(25).clamp(1, 100);
         // Decode the optional cursor string to a Cursor via serde (Cursor implements Deserialize from string)
         let cursor_obj: Option<RolloutCursor> = match params.cursor {
-            Some(s) => serde_json::from_str::<RolloutCursor>(&format!("\"{s}\"")).ok(),
+            Some(s) => serde_json::from_value::<RolloutCursor>(serde_json::Value::String(s)).ok(),
             None => None,
         };
         let cursor_ref = cursor_obj.as_ref();
@@ -628,7 +629,33 @@ impl CodexMessageProcessor {
                         session_configured.clone(),
                     ),
                 };
-                self.outgoing.send_event_as_notification(&event, None).await;
+                let meta = OutgoingNotificationMeta::new(Some(RequestId::String(
+                    conversation_id.to_string(),
+                )));
+
+                // Create custom params that include conversationId at top level
+                use serde_json::{json, Value};
+                let event_json = serde_json::to_value(&event).unwrap_or(Value::Null);
+                let mut params = json!({
+                    "conversationId": conversation_id.to_string(),
+                    "_meta": meta,
+                });
+
+                // Flatten the event fields into the params
+                if let Value::Object(event_obj) = event_json {
+                    if let Value::Object(params_obj) = &mut params {
+                        for (key, value) in event_obj {
+                            params_obj.insert(key, value);
+                        }
+                    }
+                }
+
+                self.outgoing
+                    .send_notification(OutgoingNotification {
+                        method: "sessionConfigured".to_string(),
+                        params: Some(params),
+                    })
+                    .await;
 
                 // Reply with conversation id + model and initial messages (when present)
                 let response = codex_protocol::mcp_protocol::ResumeConversationResponse {

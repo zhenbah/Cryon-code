@@ -18,6 +18,7 @@ use codex_core::protocol::InputItem;
 use codex_core::protocol::Op;
 use codex_core::protocol::Submission;
 use codex_core::protocol::TaskCompleteEvent;
+use codex_core::protocol::TokenCountEvent;
 use mcp_types::CallToolResult;
 use mcp_types::ContentBlock;
 use mcp_types::RequestId;
@@ -258,7 +259,7 @@ async fn run_codex_tool_session_inner(
                     EventMsg::AgentReasoningRawContent(_)
                     | EventMsg::AgentReasoningRawContentDelta(_)
                     | EventMsg::TaskStarted(_)
-                    | EventMsg::TokenCount(_)
+                    | EventMsg::TokenCount(TokenCountEvent { .. })
                     | EventMsg::AgentReasoning(_)
                     | EventMsg::AgentReasoningSectionBreak(_)
                     | EventMsg::McpToolCallBegin(_)

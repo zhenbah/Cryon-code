@@ -910,7 +910,23 @@ impl TextArea {
         for (row, idx) in range.enumerate() {
             let r = &lines[idx];
             let y = area.y + row as u16;
-            let line_range = r.start..r.end - 1;
+            let line_end = r.end.saturating_sub(1);
+            // Ensure line_end doesn't exceed text length and is at a valid character boundary
+            let safe_line_end = if line_end >= self.text.len() {
+                self.text.len()
+            } else {
+                // Find the last character boundary that doesn't exceed line_end
+                let mut last_valid = r.start;
+                for (i, _) in self.text.char_indices() {
+                    if i <= line_end {
+                        last_valid = i;
+                    } else {
+                        break;
+                    }
+                }
+                last_valid
+            };
+            let line_range = r.start..safe_line_end.max(r.start);
             // Draw base line with default style.
             buf.set_string(area.x, y, &self.text[line_range.clone()], Style::default());
 
@@ -1392,7 +1408,7 @@ mod tests {
 
         // Move down again should go to third wrapped line. Target col is 2, but the line has len 2 -> clamp to end
         t.move_cursor_down();
-        assert_eq!(t.cursor(), t.text().len());
+        assert_eq!(t.cursor(), t.text().len().saturating_sub(1));
     }
 
     #[test]

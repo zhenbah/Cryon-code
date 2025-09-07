@@ -18,6 +18,7 @@ use crate::error::CodexErr;
 use crate::error::Result;
 use crate::error::SandboxErr;
 use crate::landlock::spawn_command_under_linux_sandbox;
+use crate::protocol::Encoding;
 use crate::protocol::Event;
 use crate::protocol::EventMsg;
 use crate::protocol::ExecCommandOutputDeltaEvent;
@@ -369,6 +370,7 @@ async fn read_capped<R: AsyncRead + Unpin + Send + 'static>(
                     ExecOutputStream::Stdout
                 },
                 chunk,
+                encoding: Some(Encoding::Base64),
             });
             let event = Event {
                 id: stream.sub_id.clone(),

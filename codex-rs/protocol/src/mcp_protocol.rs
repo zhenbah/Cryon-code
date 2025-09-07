@@ -177,8 +177,10 @@ pub struct NewConversationResponse {
     pub model: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+#[ts(export)]
 pub struct ResumeConversationResponse {
     pub conversation_id: ConversationId,
     pub model: String,

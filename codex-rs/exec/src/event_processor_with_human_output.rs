@@ -22,6 +22,7 @@ use codex_core::protocol::PatchApplyEndEvent;
 use codex_core::protocol::SessionConfiguredEvent;
 use codex_core::protocol::StreamErrorEvent;
 use codex_core::protocol::TaskCompleteEvent;
+use codex_core::protocol::TokenCountEvent;
 use codex_core::protocol::TurnAbortReason;
 use codex_core::protocol::TurnDiffEvent;
 use codex_core::protocol::WebSearchBeginEvent;
@@ -189,8 +190,8 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 }
                 return CodexStatus::InitiateShutdown;
             }
-            EventMsg::TokenCount(ev) => {
-                if let Some(usage_info) = ev.info {
+            EventMsg::TokenCount(TokenCountEvent { info }) => {
+                if let Some(usage_info) = info {
                     ts_println!(
                         self,
                         "tokens used: {}",
