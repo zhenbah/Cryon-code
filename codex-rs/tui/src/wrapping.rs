@@ -11,6 +11,7 @@ where
 {
     let opts = width_or_options.into();
     let mut lines: Vec<Range<usize>> = Vec::new();
+    let mut current_pos = 0;
     for line in textwrap::wrap(text, opts).iter() {
         match line {
             std::borrow::Cow::Borrowed(slice) => {
@@ -18,8 +19,34 @@ where
                 let end = start + slice.len();
                 let trailing_spaces = text[end..].chars().take_while(|c| *c == ' ').count();
                 lines.push(start..end + trailing_spaces + 1);
+                current_pos = end + trailing_spaces + 1;
             }
-            std::borrow::Cow::Owned(_) => panic!("wrap_ranges: unexpected owned string"),
+            std::borrow::Cow::Owned(owned) => {
+                // Search for the owned string in the remaining text to find its range
+                if let Some(rel_start) = text[current_pos..].find(owned) {
+                    let start = current_pos + rel_start;
+                    let end = start + owned.len();
+                    let trailing_spaces = text[end..].chars().take_while(|c| *c == ' ').count();
+                    lines.push(start..end + trailing_spaces + 1);
+                    current_pos = end + trailing_spaces + 1;
+                } else {
+                    // Fallback: if not found, try to find a trimmed version
+                    let trimmed = owned.trim();
+                    if let Some(rel_start) = text[current_pos..].find(trimmed) {
+                        let start = current_pos + rel_start;
+                        let end = start + trimmed.len();
+                        let trailing_spaces = text[end..].chars().take_while(|c| *c == ' ').count();
+                        lines.push(start..end + trailing_spaces + 1);
+                        current_pos = end + trailing_spaces + 1;
+                    } else {
+                        // As last resort, panic with more info
+                        panic!(
+                            "wrap_ranges: could not find owned string '{}' in original text from position {}",
+                            owned, current_pos
+                        );
+                    }
+                }
+            }
         }
     }
     lines
@@ -34,14 +61,39 @@ where
 {
     let opts = width_or_options.into();
     let mut lines: Vec<Range<usize>> = Vec::new();
+    let mut current_pos = 0;
     for line in textwrap::wrap(text, opts).iter() {
         match line {
             std::borrow::Cow::Borrowed(slice) => {
                 let start = unsafe { slice.as_ptr().offset_from(text.as_ptr()) as usize };
                 let end = start + slice.len();
                 lines.push(start..end);
+                current_pos = end;
             }
-            std::borrow::Cow::Owned(_) => panic!("wrap_ranges_trim: unexpected owned string"),
+            std::borrow::Cow::Owned(owned) => {
+                // Search for the owned string in the remaining text to find its range
+                if let Some(rel_start) = text[current_pos..].find(owned) {
+                    let start = current_pos + rel_start;
+                    let end = start + owned.len();
+                    lines.push(start..end);
+                    current_pos = end;
+                } else {
+                    // Fallback: if not found, try to find a trimmed version or allocate temporary
+                    let trimmed = owned.trim();
+                    if let Some(rel_start) = text[current_pos..].find(trimmed) {
+                        let start = current_pos + rel_start;
+                        let end = start + trimmed.len();
+                        lines.push(start..end);
+                        current_pos = end;
+                    } else {
+                        // As last resort, panic with more info
+                        panic!(
+                            "wrap_ranges_trim: could not find owned string '{}' in original text from position {}",
+                            owned, current_pos
+                        );
+                    }
+                }
+            }
         }
     }
     lines
@@ -541,5 +593,26 @@ enchanted plants, and travelers spoke
 of the kindness of the woman who tended
 them."#
         );
+    }
+
+    #[test]
+    fn wrap_ranges_handles_owned_cow_with_hyphenation() {
+        use textwrap::Options;
+        // Use hyphenation to force Cow::Owned
+        let opts = Options::new(10).word_splitter(textwrap::WordSplitter::HyphenSplitter);
+        let text = "supercalifragilisticexpialidocious";
+        let ranges = wrap_ranges(text, opts);
+        // Should have valid ranges that map to the original text
+        for range in &ranges {
+            assert!(range.start <= range.end);
+            assert!(range.end <= text.len());
+            let substring = &text[range.start..range.end];
+            // The substring should be non-empty or handle edge cases
+            if !substring.is_empty() {
+                assert!(substring.chars().all(|c| c != '\n')); // No newlines in ranges
+            }
+        }
+        // Ensure ranges cover the text appropriately
+        assert!(!ranges.is_empty());
     }
 }

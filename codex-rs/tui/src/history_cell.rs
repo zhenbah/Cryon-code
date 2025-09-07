@@ -376,7 +376,7 @@ impl ExecCell {
                 push_owned_lines(&wrapped, &mut out_indented);
             }
         }
-        out.extend(prefix_lines(out_indented, "  └ ".dim(), "    ".into()));
+        out.extend(prefix_lines(&out_indented, "  └ ".dim(), "    ".into()));
         out
     }
 
@@ -410,7 +410,9 @@ impl ExecCell {
             && highlighted_lines[0].width() < (width as usize).saturating_sub(reserved)
         {
             let mut line = Line::from(vec![bullet, " ".into(), title.bold(), " ".into()]);
-            line.extend(highlighted_lines[0].clone());
+            for span in &highlighted_lines[0].spans {
+                line.spans.push(span.clone());
+            }
             lines.push(line);
         } else {
             lines.push(vec![bullet, " ".into(), title.bold()].into());
@@ -434,12 +436,13 @@ impl ExecCell {
             if !out.trim().is_empty() {
                 // Wrap the output.
                 for line in out.lines() {
-                    let wrapped = textwrap::wrap(line, TwOptions::new(width as usize - 4));
+                    let wrap_width = (width as usize).saturating_sub(4).max(1);
+                    let wrapped = textwrap::wrap(line, TwOptions::new(wrap_width));
                     body_lines.extend(wrapped.into_iter().map(|l| Line::from(l.to_string().dim())));
                 }
             }
         }
-        lines.extend(prefix_lines(body_lines, "  └ ".dim(), "    ".into()));
+        lines.extend(prefix_lines(&body_lines, "  └ ".dim(), "    ".into()));
         lines
     }
 }
@@ -1097,11 +1100,11 @@ impl HistoryCell for PlanUpdateCell {
                 .saturating_sub(box_str.width())
                 .max(1);
             let parts = textwrap::wrap(text, wrap_width);
-            let step_text = parts
+            let step_text: Vec<Line<'static>> = parts
                 .into_iter()
                 .map(|s| s.to_string().set_style(step_style).into())
                 .collect();
-            prefix_lines(step_text, box_str.into(), "  ".into())
+            prefix_lines(&step_text, box_str.into(), "  ".into())
         };
 
         let mut lines: Vec<Line<'static>> = vec![];
@@ -1124,7 +1127,7 @@ impl HistoryCell for PlanUpdateCell {
                 indented_lines.extend(render_step(status, step));
             }
         }
-        lines.extend(prefix_lines(indented_lines, "  └ ".into(), "    ".into()));
+        lines.extend(prefix_lines(&indented_lines, "  └ ".into(), "    ".into()));
 
         lines
     }
@@ -1183,7 +1186,7 @@ pub(crate) fn new_proposed_command(command: &[String]) -> PlainHistoryCell {
         .collect();
     let initial_prefix: Span<'static> = "  └ ".dim();
     let subsequent_prefix: Span<'static> = "    ".into();
-    lines.extend(prefix_lines(cmd_lines, initial_prefix, subsequent_prefix));
+    lines.extend(prefix_lines(&cmd_lines, initial_prefix, subsequent_prefix));
 
     PlainHistoryCell { lines }
 }

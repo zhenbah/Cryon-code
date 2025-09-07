@@ -1,5 +1,6 @@
 use ratatui::text::Line;
 use ratatui::text::Span;
+use std::borrow::Cow;
 
 /// Clone a borrowed ratatui `Line` into an owned `'static` line.
 pub fn line_to_static(line: &Line<'_>) -> Line<'static> {
@@ -38,22 +39,33 @@ pub fn is_blank_line_spaces_only(line: &Line<'_>) -> bool {
 /// Prefix each line with `initial_prefix` for the first line and
 /// `subsequent_prefix` for following lines. Returns a new Vec of owned lines.
 pub fn prefix_lines(
-    lines: Vec<Line<'static>>,
+    lines: &[Line<'_>],
     initial_prefix: Span<'static>,
     subsequent_prefix: Span<'static>,
 ) -> Vec<Line<'static>> {
     lines
-        .into_iter()
+        .iter()
         .enumerate()
         .map(|(i, l)| {
             let mut spans = Vec::with_capacity(l.spans.len() + 1);
-            spans.push(if i == 0 {
-                initial_prefix.clone()
+            let prefix_span = if i == 0 {
+                &initial_prefix
             } else {
-                subsequent_prefix.clone()
+                &subsequent_prefix
+            };
+            spans.push(Span {
+                style: prefix_span.style,
+                content: Cow::Owned(prefix_span.content.to_string()),
             });
-            spans.extend(l.spans);
-            Line::from(spans)
+            spans.extend(l.spans.iter().map(|s| Span {
+                style: s.style,
+                content: Cow::Owned(s.content.to_string()),
+            }));
+            Line {
+                spans,
+                style: l.style,
+                alignment: l.alignment,
+            }
         })
         .collect()
 }

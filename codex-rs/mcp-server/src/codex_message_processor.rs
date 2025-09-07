@@ -8,6 +8,7 @@ use crate::error_code::INVALID_REQUEST_ERROR_CODE;
 use crate::json_to_toml::json_to_toml;
 use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::OutgoingNotification;
+use crate::outgoing_message::OutgoingNotificationMeta;
 use codex_core::AuthManager;
 use codex_core::CodexConversation;
 use codex_core::ConversationManager;
@@ -628,7 +629,10 @@ impl CodexMessageProcessor {
                         session_configured.clone(),
                     ),
                 };
-                self.outgoing.send_event_as_notification(&event, None).await;
+                let meta = OutgoingNotificationMeta::new(Some(RequestId::String(conversation_id.to_string())));
+                self.outgoing
+                    .send_event_as_notification(&event, Some(meta))
+                    .await;
 
                 // Reply with conversation id + model and initial messages (when present)
                 let response = codex_protocol::mcp_protocol::ResumeConversationResponse {

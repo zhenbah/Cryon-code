@@ -274,7 +274,7 @@ fn exec_approval_emits_proposed_command_and_decision_history() {
     let ev = ExecApprovalRequestEvent {
         call_id: "call-short".into(),
         command: vec!["bash".into(), "-lc".into(), "echo hello world".into()],
-        cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        cwd: PathBuf::from("/tmp"),
         reason: Some(
             "this is a test reason such as one that would be produced by the model".into(),
         ),
@@ -312,7 +312,7 @@ fn exec_approval_decision_truncates_multiline_and_long_commands() {
     let ev_multi = ExecApprovalRequestEvent {
         call_id: "call-multi".into(),
         command: vec!["bash".into(), "-lc".into(), "echo line1\necho line2".into()],
-        cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        cwd: PathBuf::from("/tmp"),
         reason: Some(
             "this is a test reason such as one that would be produced by the model".into(),
         ),
@@ -344,7 +344,7 @@ fn exec_approval_decision_truncates_multiline_and_long_commands() {
     let ev_long = ExecApprovalRequestEvent {
         call_id: "call-long".into(),
         command: vec!["bash".into(), "-lc".into(), long.clone()],
-        cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        cwd: PathBuf::from("/tmp"),
         reason: None,
     };
     chat.handle_codex_event(Event {
@@ -377,7 +377,7 @@ fn begin_exec(chat: &mut ChatWidget, call_id: &str, raw_cmd: &str) {
         msg: EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
             call_id: call_id.to_string(),
             command,
-            cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            cwd: PathBuf::from("/tmp"),
             parsed_cmd,
         }),
     });
@@ -810,7 +810,7 @@ fn approval_modal_exec_snapshot() {
     let ev = ExecApprovalRequestEvent {
         call_id: "call-approve-cmd".into(),
         command: vec!["bash".into(), "-lc".into(), "echo hello world".into()],
-        cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        cwd: PathBuf::from("/tmp"),
         reason: Some(
             "this is a test reason such as one that would be produced by the model".into(),
         ),
@@ -840,7 +840,7 @@ fn approval_modal_exec_without_reason_snapshot() {
     let ev = ExecApprovalRequestEvent {
         call_id: "call-approve-cmd-noreason".into(),
         command: vec!["bash".into(), "-lc".into(), "echo hello world".into()],
-        cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        cwd: PathBuf::from("/tmp"),
         reason: None,
     };
     chat.handle_codex_event(Event {
@@ -1640,7 +1640,7 @@ fn chatwidget_exec_and_status_layout_vt100_snapshot() {
         msg: EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
             call_id: "c1".into(),
             command: vec!["bash".into(), "-lc".into(), "rg \"Change Approved\"".into()],
-            cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            cwd: PathBuf::from("/tmp"),
             parsed_cmd: vec![
                 codex_core::parse_command::ParsedCommand::Search {
                     query: Some("Change Approved".into()),
